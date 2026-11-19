@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from unittest import TestCase
 from unittest.mock import Mock
 from uuid import uuid4
@@ -5,8 +6,8 @@ from uuid import uuid4
 from flask import Flask
 from flask.testing import FlaskClient
 
-from cartas.presentation.consumers.composicao import montar_roteador
-from cartas.presentation.consumers.receptor_http import criar_app
+from cartas.model.carta import Carta
+from cartas.presentation.consumers.composicao import montar_app
 from cartas.service.distribuicao_cartas import DistribuicaoCartasService
 from cartas.service.posse_carta import PosseCartaService
 
@@ -15,7 +16,7 @@ class ReceptorHttpTest(TestCase):
     def setUp(self) -> None:
         self.distribuicao = Mock(spec=DistribuicaoCartasService)
         self.posse = Mock(spec=PosseCartaService)
-        self.app: Flask = criar_app(montar_roteador(self.distribuicao, self.posse))
+        self.app: Flask = montar_app(self.distribuicao, self.posse)
         self.client: FlaskClient = self.app.test_client()
         self.jogador_id = uuid4()
         self.troca = {
@@ -43,6 +44,100 @@ class ReceptorHttpTest(TestCase):
         carta_id, novo_jogador_id = self.posse.atualizar_posse.call_args.args
         self.assertEqual(str(carta_id), self.troca["carta_id"])
         self.assertEqual(str(novo_jogador_id), self.troca["novo_jogador_id"])
+
+    def test_consultar_cartas_retorna_cartas_serializadas(self) -> None:
+        carta = Carta(
+            uuid4(), 1, "Bulbasaur", datetime(2026, 11, 19, tzinfo=UTC), "inicial"
+        )
+        self.posse.consultar_cartas_do_jogador.return_value = [carta]
+
+        resposta = self.client.get(f"/jogadores/{self.jogador_id}/cartas")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(
+            resposta.get_json(),
+            [
+                {
+                    "carta_id": str(carta.carta_id),
+                    "pokemon_id": 1,
+                    "nome_pokemon": "Bulbasaur",
+                    "data_obtencao": "2026-11-19T00:00:00+00:00",
+                    "origem": "inicial",
+                }
+            ],
+        )
+        self.posse.consultar_cartas_do_jogador.assert_called_once_with(
+            self.jogador_id
+        )
+
+    def test_consultar_posse_retorna_dto_serializado(self) -> None:
+        carta_id = uuid4()
+        self.posse.consultar_posse_carta.return_value = True
+
+        resposta = self.client.get(
+            f"/jogadores/{self.jogador_id}/cartas/{carta_id}/posse"
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.get_json(), {"possui": True})
+        self.posse.consultar_posse_carta.assert_called_once_with(
+            self.jogador_id, carta_id
+        )
+
+    def test_atualizar_posse_retorna_204_e_delega(self) -> None:
+        carta_id, novo_jogador_id = uuid4(), uuid4()
+
+        resposta = self.client.put(
+            f"/cartas/{carta_id}/posse",
+            json={"novo_jogador_id": str(novo_jogador_id)},
+        )
+
+        self.assertEqual(resposta.status_code, 204)
+        self.assertEqual(resposta.get_data(), b"")
+        self.posse.atualizar_posse.assert_called_once_with(carta_id, novo_jogador_id)
+
+    def test_requisicao_de_cartas_com_uuid_invalido_responde_400(self) -> None:
+        resposta = self.client.get("/jogadores/invalido/cartas")
+
+        self.assertEqual(resposta.status_code, 400)
+        self.posse.consultar_cartas_do_jogador.assert_not_called()
+
+    def test_corpo_invalido_de_atualizacao_responde_400(self) -> None:
+        respostas = (
+            self.client.put("/cartas/posse-invalida/posse", json={}),
+            self.client.put(
+                f"/cartas/{uuid4()}/posse", json={"novo_jogador_id": "invalido"}
+            ),
+            self.client.put(
+                f"/cartas/{uuid4()}/posse",
+                json={"novo_jogador_id": str(uuid4()), "campo_extra": True},
+            ),
+        )
+
+        for resposta in respostas:
+            with self.subTest(status=resposta.status_code):
+                self.assertEqual(resposta.status_code, 400)
+        self.posse.atualizar_posse.assert_not_called()
+
+    def test_jogador_inexistente_responde_404(self) -> None:
+        self.posse.consultar_cartas_do_jogador.side_effect = LookupError(
+            "Jogador não encontrado."
+        )
+
+        resposta = self.client.get(f"/jogadores/{self.jogador_id}/cartas")
+
+        self.assertEqual(resposta.status_code, 404)
+        self.assertEqual(resposta.get_json()["status"], "erro")
+
+    def test_transferencia_invalida_responde_409(self) -> None:
+        self.posse.atualizar_posse.side_effect = ValueError("Pokémon duplicado.")
+
+        resposta = self.client.put(
+            f"/cartas/{uuid4()}/posse",
+            json={"novo_jogador_id": str(uuid4())},
+        )
+
+        self.assertEqual(resposta.status_code, 409)
 
     def test_aceita_json_sem_cabecalho_content_type(self) -> None:
         corpo = f'{{"jogador_id": "{self.jogador_id}"}}'

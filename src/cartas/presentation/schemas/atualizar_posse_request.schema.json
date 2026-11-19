@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cartas:schemas:atualizar-posse-request",
+  "title": "AtualizarPosseRequest",
+  "type": "object",
+  "properties": {
+    "carta_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "novo_jogador_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "carta_id",
+    "novo_jogador_id"
+  ],
+  "additionalProperties": false
+}
