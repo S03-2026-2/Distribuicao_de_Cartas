@@ -30,6 +30,8 @@ tests/
 ├── unit/
 │   ├── model/
 │   ├── presentation/
+│   ├── service/
+│   └── integration/
 │   └── service/
 └── integration/
 ```
@@ -40,6 +42,9 @@ Os arquivos `pyproject.toml`, `.python-version` e `uv.lock` definem a configura�
 
 ### Arquitetura em camadas
 
+**Onde / Como aparece:** `presentation` contém controllers e consumers; eles delegam operações aos contratos de `service`. Os serviços usam modelos e portas para suas dependências. `integration` implementa as portas de catálogo e de publicação; `repository` ainda não tem adaptador concreto.
+
+**Significado e motivação:** separar apresentação, casos de uso e domínio limita o acoplamento e torna explícitas as responsabilidades de cada parte.
 **Explicação:** organiza o sistema em camadas com responsabilidades distintas, reduzindo o acoplamento entre apresentação, serviços e domínio.
 
 **Exemplo completo** ([`cartas_controller.py`](./src/cartas/presentation/controllers/cartas_controller.py)):
@@ -375,3 +380,134 @@ class SorteioAleatorioStrategy(SorteioStrategy):
             )
         return tuple(sample(ids_unicos, k=5))
 ```
+
+### Gateway (cliente da PokéAPI)
+
+**Onde / Como aparece:** `PokeAPIClient` implementa `PokemonCatalogo`. Ele conhece as URLs, percorre a paginação de `/pokemon` (seguindo o campo `next`), delega a tradução ao mapeador e converte erros HTTP em exceções da integração. O transporte é injetado como `ClienteJSONLeitura`.
+
+**Significado e motivação:** o Gateway encapsula o acesso a um recurso externo atrás de um objeto com interface do domínio. O serviço pede "IDs disponíveis" e "pokémon por ID" sem saber que existe HTTP, paginação ou JSON, e os testes substituem o gateway (ou só o transporte) por mocks.
+
+**Exemplo completo** ([`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py)):
+
+```python
+class PokeAPIClient(PokemonCatalogo):
+    def __init__(
+        self,
+        http: ClienteJSONLeitura,
+        url_base: str = URL_BASE_POKEAPI,
+        tamanho_pagina: int = TAMANHO_PAGINA_PADRAO,
+    ) -> None:
+        if tamanho_pagina < 1:
+            raise ValueError("O tamanho da página deve ser positivo.")
+        self._http = http
+        self._url_base = url_base.rstrip("/")
+        self._tamanho_pagina = tamanho_pagina
+
+    def listar_ids_disponiveis(self) -> tuple[int, ...]:
+        ids: list[int] = []
+        url: str | None = f"{self._url_base}/pokemon?limit={self._tamanho_pagina}"
+        while url is not None:
+            pagina = mapear_pagina_ids(self._obter_json(url))
+            ids.extend(pagina.ids)
+            url = pagina.proxima_url
+        return tuple(ids)
+
+    def buscar_pokemon_por_id(self, pokemon_id: int) -> Pokemon:
+        return mapear_pokemon(self._obter_json(f"{self._url_base}/pokemon/{pokemon_id}/"))
+
+    def _obter_json(self, url: str) -> object:
+        try:
+            return self._http.obter_json(url)
+        except ServicoExternoIndisponivelError as erro:
+            raise PokeAPIIndisponivelError(str(erro)) from erro
+        except RespostaHTTPError as erro:
+            if erro.transitoria:
+                raise PokeAPIIndisponivelError(str(erro)) from erro
+            raise RespostaPokeAPIInvalidaError(str(erro)) from erro
+        except CorpoJSONInvalidoError as erro:
+            raise RespostaPokeAPIInvalidaError(str(erro)) from erro
+```
+
+### Decorator (cache do catálogo)
+
+**Onde / Como aparece:** `CatalogoPokemonEmCache`, no mesmo módulo do gateway, implementa `PokemonCatalogo` e envolve outro `PokemonCatalogo`. Ele guarda os pokémon já buscados (os dados não mudam) e a lista de IDs por 24 horas. Falhas não são guardadas.
+
+**Significado e motivação:** o Decorator acrescenta comportamento sem alterar a classe decorada (Aberto/Fechado). O cache atende à política de uso justo da PokéAPI, que pede que os recursos sejam guardados localmente, sem misturar essa responsabilidade com o gateway.
+
+**Exemplo completo** ([`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py)):
+
+```python
+class CatalogoPokemonEmCache(PokemonCatalogo):
+    def __init__(
+        self,
+        catalogo: PokemonCatalogo,
+        validade_ids: timedelta = VALIDADE_PADRAO_IDS,
+        relogio: Callable[[], float] = monotonic,
+    ) -> None:
+        self._catalogo = catalogo
+        self._validade_ids_segundos = validade_ids.total_seconds()
+        self._relogio = relogio
+        self._ids: tuple[int, ...] | None = None
+        self._ids_obtidos_em = 0.0
+        self._pokemons: dict[int, Pokemon] = {}
+
+    def listar_ids_disponiveis(self) -> tuple[int, ...]:
+        agora = self._relogio()
+        if self._ids is None or agora - self._ids_obtidos_em >= self._validade_ids_segundos:
+            self._ids = tuple(self._catalogo.listar_ids_disponiveis())
+            self._ids_obtidos_em = agora
+        return self._ids
+
+    def buscar_pokemon_por_id(self, pokemon_id: int) -> Pokemon:
+        pokemon = self._pokemons.get(pokemon_id)
+        if pokemon is None:
+            pokemon = self._catalogo.buscar_pokemon_por_id(pokemon_id)
+            self._pokemons[pokemon_id] = pokemon
+        return pokemon
+```
+
+### Publisher/Producer (publicação de eventos no Broker)
+
+**Onde / Como aparece:** `CartasDistribuidasPublisher` implementa `Publisher[EventoCartasDistribuidas]`. Ele serializa o evento e o entrega ao tópico `cartas-distribuidas` por meio da porta `MensageiroBroker`, sem conhecer o transporte. `MensageiroBrokerHTTP`, em [`mensageiro_broker.py`](./src/cartas/integration/mensageiro_broker.py), é a implementação **provisória** dessa porta: espelha a convenção do receptor (`POST <url_broker>/eventos/<topico>`, JSON) até a equipe do Broker confirmar o protocolo. As cartas da mensagem seguem o mesmo formato de `CartaResponse`.
+
+**Significado e motivação:** o produtor emite eventos sem conhecer quem os consome, o que desacopla este serviço dos demais. Separar o publisher (o quê e para qual tópico) do mensageiro (como entregar) permite trocar HTTP por RabbitMQ ou Kafka criando outro `MensageiroBroker`, sem mudar o publisher nem o serviço.
+
+**Exemplo completo** ([`cartas_distribuidas_publisher.py`](./src/cartas/integration/cartas_distribuidas_publisher.py)):
+
+```python
+TOPICO_CARTAS_DISTRIBUIDAS = "cartas-distribuidas"
+
+
+class CartasDistribuidasPublisher(Publisher[EventoCartasDistribuidas]):
+    def __init__(
+        self,
+        mensageiro: MensageiroBroker,
+        topico: str = TOPICO_CARTAS_DISTRIBUIDAS,
+    ) -> None:
+        self._mensageiro = mensageiro
+        self._topico = topico
+
+    def publicar(self, evento: EventoCartasDistribuidas) -> None:
+        self._mensageiro.enviar(self._topico, serializar_cartas_distribuidas(evento))
+```
+
+Mensagem publicada:
+
+```json
+{
+  "jogador_id": "8f1c...",
+  "cartas": [
+    {
+      "carta_id": "3b2a...",
+      "pokemon_id": 25,
+      "nome_pokemon": "pikachu",
+      "data_obtencao": "2026-11-19T12:30:00+00:00",
+      "origem": "distribuicao_inicial"
+    }
+  ]
+}
+```
+
+Os JSON Schemas em [`schemas/`](./src/cartas/presentation/schemas/) e o validador em [`schema_validator.py`](./src/cartas/presentation/schema_validator.py) definem e verificam contratos de dados; validação por schema não é um Design Pattern.
+
+Observer não é listado como aplicado dentro do processo: os eventos são entregues ao Broker (Publisher/Producer), e não a assinantes registrados no próprio serviço. Facade e Singleton não têm exemplos completos no código. O contrato de repositório não tem adaptador concreto neste estado.
