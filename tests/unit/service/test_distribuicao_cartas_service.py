@@ -2,7 +2,7 @@ from unittest import TestCase
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
-from cartas.model.evento_cartas_distribuidas import EventoCartasDistribuidas
+from cartas.model.events import EventoCartasDistribuidas
 from cartas.model.jogador import Jogador
 from cartas.model.pokemon import Pokemon
 from cartas.service.distribuicao_cartas_ports import (
@@ -10,12 +10,12 @@ from cartas.service.distribuicao_cartas_ports import (
     PokemonCatalogo,
     Publisher,
 )
-from cartas.service.distribuicao_cartas_service_impl import (
+from cartas.service.distribuicao_cartas import (
     CatalogoPokemonInvalidoError,
     DistribuicaoCartasServiceImpl,
 )
-from cartas.service.sorteio_aleatorio_strategy import SorteioAleatorioStrategy
-from cartas.service.sorteio_strategy import SorteioStrategy
+from cartas.service.sorteio import SorteioAleatorioStrategy
+from cartas.service.sorteio import SorteioStrategy
 
 
 class DistribuicaoCartasServiceTest(TestCase):

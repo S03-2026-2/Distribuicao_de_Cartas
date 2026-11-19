@@ -1,17 +1,22 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
+from typing import Protocol
 
 from cartas.model.carta import Carta
-from cartas.model.evento_cartas_distribuidas import EventoCartasDistribuidas
+from cartas.model.events import EventoCartasDistribuidas
 from cartas.model.jogador import Jogador
 from cartas.service.distribuicao_cartas_ports import (
     JogadorCartasRepository,
     PokemonCatalogo,
     Publisher,
 )
-from cartas.service.distribuicao_cartas_service import DistribuicaoCartasService
 from cartas.service.erros_distribuicao_cartas import CatalogoPokemonInvalidoError
-from cartas.service.sorteio_strategy import SorteioStrategy
+from cartas.service.sorteio import SorteioStrategy
+
+
+class DistribuicaoCartasService(Protocol):
+    def distribuir_cartas_iniciais(self, jogador_id: UUID) -> Jogador:
+        ...
 
 
 class DistribuicaoCartasServiceImpl(DistribuicaoCartasService):

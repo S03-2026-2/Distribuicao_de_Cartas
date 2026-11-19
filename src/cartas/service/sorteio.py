@@ -1,8 +1,14 @@
 from collections.abc import Sequence
+from typing import Protocol
 from random import sample
 
 from cartas.service.erros_distribuicao_cartas import CatalogoPokemonInvalidoError
-from cartas.service.sorteio_strategy import SorteioStrategy
+
+
+class SorteioStrategy(Protocol):
+    def sortear(self, ids: Sequence[int]) -> tuple[int, ...]:
+        """Retorna cinco IDs distintos pertencentes à sequência recebida."""
+        ...
 
 
 class SorteioAleatorioStrategy(SorteioStrategy):
