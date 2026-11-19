@@ -3,7 +3,6 @@ from uuid import UUID
 
 from cartas.model.carta import Carta
 from cartas.model.jogador import Jogador
-from cartas.repository.validacao_transferencia import CartasPorId, validar_transferencia
 from cartas.service.distribuicao_cartas_ports import (
     JogadorCartasRepository as RepositorioDeDistribuicao,
 )
@@ -11,6 +10,7 @@ from cartas.service.erros_persistencia import ConflitoDePersistenciaError
 from cartas.service.posse_carta_ports import (
     JogadorCartasRepository as RepositorioDePosse,
 )
+from cartas.service.validacao_transferencia import CartasPorId, validar_transferencia
 
 
 class JogadorCartasRepositoryImpl(RepositorioDeDistribuicao, RepositorioDePosse):
