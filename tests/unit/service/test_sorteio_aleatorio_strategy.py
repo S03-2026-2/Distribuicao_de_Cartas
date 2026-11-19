@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from cartas.service.erros_distribuicao_cartas import CatalogoPokemonInvalidoError
-from cartas.service.sorteio_aleatorio_strategy import SorteioAleatorioStrategy
+from cartas.service.sorteio import SorteioAleatorioStrategy
 
 
 class SorteioAleatorioStrategyTest(TestCase):
