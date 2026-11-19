@@ -32,6 +32,7 @@ tests/
 │   ├── presentation/
 │   ├── service/
 │   └── integration/
+│   └── service/
 └── integration/
 ```
 
@@ -44,6 +45,7 @@ Os arquivos `pyproject.toml`, `.python-version` e `uv.lock` definem a configura�
 **Onde / Como aparece:** `presentation` contém controllers e consumers; eles delegam operações aos contratos de `service`. Os serviços usam modelos e portas para suas dependências. `integration` implementa as portas de catálogo e de publicação; `repository` ainda não tem adaptador concreto.
 
 **Significado e motivação:** separar apresentação, casos de uso e domínio limita o acoplamento e torna explícitas as responsabilidades de cada parte.
+**Explicação:** organiza o sistema em camadas com responsabilidades distintas, reduzindo o acoplamento entre apresentação, serviços e domínio.
 
 **Exemplo completo** ([`cartas_controller.py`](./src/cartas/presentation/controllers/cartas_controller.py)):
 
@@ -73,9 +75,7 @@ class CartasController:
 
 ### API HTTP com estilo REST
 
-**Onde / Como aparece:** o receptor Flask expõe `GET /jogadores/<jogador_id>/cartas`, `GET /jogadores/<jogador_id>/cartas/<carta_id>/posse` e `PUT /cartas/<carta_id>/posse`. As rotas validam os dados com JSON Schema, convertem UUIDs, delegam ao `CartasController` e serializam as respostas. O endpoint de atualização recebe `novo_jogador_id` no JSON e responde `204`.
-
-**Significado e motivação:** uma API REST organiza a comunicação em recursos HTTP e usa métodos e representações padronizados, desacoplando clientes da implementação interna. A API back-end está presente; não há uma SPA/front-end neste repositório.
+**Explicação:** organiza a comunicação por recursos HTTP, usando métodos e representações padronizados para reduzir o acoplamento entre clientes e servidor.
 
 **Exemplo completo da rota de consulta** ([`receptor_http.py`](./src/cartas/presentation/consumers/receptor_http.py)):
 
@@ -105,42 +105,11 @@ def consultar_cartas_do_jogador(jogador_id: str) -> tuple[Response, int]:
     )
 ```
 
-MVC não está completo porque não há uma View MVC separada. SOA e MOM também não estão completos: a publicação para o Broker usa um adaptador HTTP provisório e ainda não há integração com um broker real. O receptor de eventos `POST /eventos/<nome>` e seu broker simulado continuam provisórios.
-
-### Camada de Integração / Camada Anticorrupção (Anti-Corruption Layer)
-
-**Onde / Como aparece:** [`integration/`](./src/cartas/integration/) implementa as portas que o serviço declara em [`distribuicao_cartas_ports.py`](./src/cartas/service/distribuicao_cartas_ports.py) (`PokemonCatalogo` e `Publisher[T]`). Na entrada, [`mapeador_pokeapi.py`](./src/cartas/integration/mapeador_pokeapi.py) traduz o JSON da PokéAPI (campos em inglês, IDs dentro de URLs, tipos ordenados por `slot`) para `Pokemon`. Na saída, [`serializador_cartas_distribuidas.py`](./src/cartas/integration/serializador_cartas_distribuidas.py) traduz `EventoCartasDistribuidas` para JSON. Falhas de transporte viram exceções da própria integração: `PokeAPIIndisponivelError`/`BrokerIndisponivelError` (subclasses de `ConnectionError`, falha transitória) ou `RespostaPokeAPIInvalidaError` (subclasse de `CatalogoPokemonInvalidoError`, do serviço).
-
-**Significado e motivação:** a camada anticorrupção impede que o modelo de um sistema externo contamine o domínio. Se a PokéAPI ou o Broker mudarem de formato, só os tradutores e adaptadores desta camada mudam. Como as portas pertencem ao serviço e a integração depende delas (e não o contrário), a dependência aponta para dentro (Inversão de Dependência).
-
-**Exemplo completo** ([`mapeador_pokeapi.py`](./src/cartas/integration/mapeador_pokeapi.py), trecho público):
-
-```python
-def mapear_pokemon(dados: object) -> Pokemon:
-    registro = _exigir_objeto(dados, "pokemon")
-    tipos_ordenados = sorted(
-        (_exigir_objeto(tipo, "types[]") for tipo in _ler_lista(registro, "types")),
-        key=lambda tipo: _ler_inteiro(tipo, "slot"),
-    )
-    return Pokemon(
-        pokemon_id=_ler_inteiro(registro, "id"),
-        nome_pokemon=_ler_texto(registro, "name"),
-        tipos=tuple(
-            _ler_texto(_exigir_objeto(tipo.get("type"), "types[].type"), "name")
-            for tipo in tipos_ordenados
-        ),
-    )
-```
-
-O transporte HTTP fica em [`cliente_http.py`](./src/cartas/integration/cliente_http.py), separado em dois contratos (`ClienteJSONLeitura` e `ClienteJSONEscrita`, Segregação de Interfaces): o gateway da PokéAPI só lê, e o mensageiro do Broker só escreve. `ClienteJSONUrllib` implementa ambos com a biblioteca padrão. As fábricas de [`integration/composicao.py`](./src/cartas/integration/composicao.py) entregam os adaptadores já montados.
-
 ## Design Patterns
 
 ### Injeção de Dependência
 
-**Onde / Como aparece:** o `CartasController` recebe `PosseCartaService` pelo construtor e delega a ele as operações do diagrama. A composição injeta o mesmo serviço no controller e no consumer de troca.
-
-**Significado e motivação:** fornecer dependências de fora reduz o acoplamento a implementações concretas e permite substituí-las por mocks em testes.
+**Explicação:** fornece as dependências a um objeto de fora, reduzindo o acoplamento e permitindo substituí-las, por exemplo, por mocks em testes.
 
 **Exemplo completo** ([`cartas_controller.py`](./src/cartas/presentation/controllers/cartas_controller.py)):
 
@@ -167,11 +136,124 @@ class CartasController:
         self._posse_carta_service.atualizar_posse(carta_id, novo_jogador_id)
 ```
 
+### Repository
+
+**Explicação:** encapsula o acesso aos dados atrás de uma interface, mantendo os serviços independentes dos detalhes de armazenamento.
+
+**Exemplo completo** ([`jogador_cartas_repository.py`](./src/cartas/service/jogador_cartas_repository.py)):
+
+```python
+from threading import Lock
+from uuid import UUID
+
+from cartas.model.carta import Carta
+from cartas.model.jogador import Jogador
+from cartas.service.distribuicao_cartas_ports import (
+    JogadorCartasRepository as RepositorioDeDistribuicao,
+)
+from cartas.service.erros_persistencia import ConflitoDePersistenciaError
+from cartas.service.posse_carta_ports import (
+    JogadorCartasRepository as RepositorioDePosse,
+)
+from cartas.service.validacao_transferencia import CartasPorId, validar_transferencia
+
+
+class JogadorCartasRepositoryImpl(RepositorioDeDistribuicao, RepositorioDePosse):
+    """Repositório em memória de jogadores e das cartas que possuem."""
+
+    def __init__(self) -> None:
+        self._cartas_por_jogador: dict[UUID, CartasPorId] = {}
+        self._dono_por_carta: dict[UUID, UUID] = {}
+        self._lock = Lock()
+
+    def buscar_por_id(self, jogador_id: UUID) -> Jogador | None:
+        with self._lock:
+            cartas = self._cartas_por_jogador.get(jogador_id)
+            return None if cartas is None else _montar_jogador(jogador_id, cartas)
+
+    def buscar_por_carta_id(self, carta_id: UUID) -> Jogador | None:
+        with self._lock:
+            jogador_id = self._dono_por_carta.get(carta_id)
+            if jogador_id is None:
+                return None
+            return _montar_jogador(jogador_id, self._cartas_por_jogador[jogador_id])
+
+    def salvar(self, jogador: Jogador) -> bool:
+        cartas = _extrair_cartas(jogador)
+        with self._lock:
+            if jogador.jogador_id in self._cartas_por_jogador:
+                return False
+            self._exigir_cartas_sem_dono(cartas)
+            self._gravar(jogador.jogador_id, cartas)
+            return True
+
+    def salvar_transferencia(self, origem: Jogador, destino: Jogador) -> None:
+        if origem.jogador_id == destino.jogador_id:
+            raise ValueError("Origem e destino devem ser jogadores diferentes.")
+        origem_nova = _extrair_cartas(origem)
+        destino_novo = _extrair_cartas(destino)
+
+        with self._lock:
+            origem_persistida = self._obter_persistido(origem.jogador_id)
+            destino_persistido = self._obter_persistido(destino.jogador_id)
+            validar_transferencia(
+                origem_persistida, destino_persistido, origem_nova, destino_novo
+            )
+            self._gravar(origem.jogador_id, origem_nova)
+            self._gravar(destino.jogador_id, destino_novo)
+
+    def _obter_persistido(self, jogador_id: UUID) -> CartasPorId:
+        try:
+            return self._cartas_por_jogador[jogador_id]
+        except KeyError:
+            raise LookupError(f"Jogador {jogador_id} não encontrado.") from None
+
+    def _exigir_cartas_sem_dono(self, cartas: CartasPorId) -> None:
+        if any(carta_id in self._dono_por_carta for carta_id in cartas):
+            raise ConflitoDePersistenciaError(
+                "Uma das cartas já pertence a outro jogador."
+            )
+
+    def _gravar(self, jogador_id: UUID, cartas: CartasPorId) -> None:
+        for carta_id in self._cartas_por_jogador.get(jogador_id, {}):
+            del self._dono_por_carta[carta_id]
+        self._cartas_por_jogador[jogador_id] = cartas
+        for carta_id in cartas:
+            self._dono_por_carta[carta_id] = jogador_id
+
+
+def _extrair_cartas(jogador: Jogador) -> CartasPorId:
+    return {carta.carta_id: carta for carta in jogador.listar_cartas()}
+
+
+def _montar_jogador(jogador_id: UUID, cartas: CartasPorId) -> Jogador:
+    return Jogador(jogador_id, cartas.values())
+```
+
+### Data Mapper
+
+**Explicação:** converte entre a representação dos dados armazenados e os objetos de domínio, sem acoplar o modelo ao mecanismo de armazenamento.
+
+**Exemplo completo** ([`jogador_cartas_repository.py`](./src/cartas/service/jogador_cartas_repository.py)):
+
+```python
+from uuid import UUID
+
+from cartas.model.jogador import Jogador
+from cartas.service.validacao_transferencia import CartasPorId
+
+
+def _extrair_cartas(jogador: Jogador) -> CartasPorId:
+    return {carta.carta_id: carta for carta in jogador.listar_cartas()}
+
+
+def _montar_jogador(jogador_id: UUID, cartas: CartasPorId) -> Jogador:
+    return Jogador(jogador_id, cartas.values())
+```
+
 ### DTO (Data Transfer Object)
 
-**Onde / Como aparece:** os DTOs de entrada e saída da API HTTP estão em [`posse_carta.py`](./src/cartas/presentation/dtos/posse_carta.py). As rotas os usam para representar os dados recebidos e formatar os dados de resposta; o controller recebe os valores tipados e delega as operações ao serviço.
-
-**Significado e motivação:** DTOs definem contratos de dados explícitos e separam o formato de transporte das entidades e regras do domínio.
+**Explicação:** define objetos simples para transportar dados entre partes do sistema, mantendo o formato de transporte separado das entidades e regras do domínio.
 
 **Exemplo completo** ([`posse_carta.py`](./src/cartas/presentation/dtos/posse_carta.py)):
 
@@ -214,9 +296,7 @@ class ConsultarPosseCartaResponseDTO:
 
 ### Adapter (adaptação de payload)
 
-**Onde / Como aparece:** o roteador registra uma função conversora para cada tipo de evento. A conversora adapta o objeto JSON recebido para um evento tipado que o consumer entende, além de rejeitar campos obrigatórios ausentes ou UUIDs inválidos.
-
-**Significado e motivação:** Adapter permite que duas interfaces incompatíveis cooperem. Aqui, a função de conversão isola o formato externo da mensagem do tipo interno consumido pelo serviço.
+**Explicação:** adapta uma interface externa a um formato que o restante do sistema consegue consumir, isolando diferenças entre contratos.
 
 **Exemplo completo** ([`conversores.py`](./src/cartas/presentation/consumers/conversores.py), [`events.py`](./src/cartas/presentation/consumers/events.py) e [`errors.py`](./src/cartas/presentation/consumers/errors.py)):
 
@@ -266,9 +346,7 @@ def _ler_uuid(dados: Mapping[str, object], campo: str) -> UUID:
 
 ### Strategy
 
-**Onde / Como aparece:** `SorteioStrategy` define o contrato do algoritmo; `SorteioAleatorioStrategy` implementa uma opção concreta. `DistribuicaoCartasServiceImpl` recebe a estratégia por injeção e delega a ela o sorteio.
-
-**Significado e motivação:** Strategy encapsula algoritmos intercambiáveis sob um contrato comum, permitindo trocar o comportamento sem alterar quem o utiliza.
+**Explicação:** encapsula algoritmos intercambiáveis sob um contrato comum, permitindo variar o comportamento sem alterar quem o utiliza.
 
 **Exemplo completo** ([`sorteio.py`](./src/cartas/service/sorteio.py) e [`erros_distribuicao_cartas.py`](./src/cartas/service/erros_distribuicao_cartas.py)):
 
