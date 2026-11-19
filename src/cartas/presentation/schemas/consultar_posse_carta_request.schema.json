@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cartas:schemas:consultar-posse-carta-request",
+  "title": "ConsultarPosseCartaRequest",
+  "type": "object",
+  "properties": {
+    "jogador_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "carta_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "jogador_id",
+    "carta_id"
+  ],
+  "additionalProperties": false
+}

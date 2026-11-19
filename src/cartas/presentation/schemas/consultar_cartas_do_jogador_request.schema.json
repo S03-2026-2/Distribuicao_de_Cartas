@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cartas:schemas:consultar-cartas-do-jogador-request",
+  "title": "ConsultarCartasDoJogadorRequest",
+  "type": "object",
+  "properties": {
+    "jogador_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "jogador_id"
+  ],
+  "additionalProperties": false
+}

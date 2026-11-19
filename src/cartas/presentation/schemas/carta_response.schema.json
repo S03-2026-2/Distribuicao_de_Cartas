@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cartas:schemas:carta-response",
+  "title": "CartaResponse",
+  "type": "object",
+  "properties": {
+    "carta_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pokemon_id": {
+      "type": "integer"
+    },
+    "nome_pokemon": {
+      "type": "string"
+    },
+    "data_obtencao": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "origem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "carta_id",
+    "pokemon_id",
+    "nome_pokemon",
+    "data_obtencao",
+    "origem"
+  ],
+  "additionalProperties": false
+}
