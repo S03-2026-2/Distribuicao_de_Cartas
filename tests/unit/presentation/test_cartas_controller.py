@@ -5,11 +5,6 @@ from uuid import uuid4
 
 from cartas.model.carta import Carta
 from cartas.presentation.controllers.cartas_controller import CartasController
-from cartas.presentation.dtos.posse_carta import (
-    AtualizarPosseRequestDTO,
-    ConsultarCartasDoJogadorRequestDTO,
-    ConsultarPosseCartaRequestDTO,
-)
 from cartas.service.posse_carta import PosseCartaService
 
 
@@ -18,40 +13,34 @@ class CartasControllerTest(TestCase):
         self.service = Mock(spec=PosseCartaService)
         self.controller = CartasController(self.service)
 
-    def test_consultar_cartas_delega_e_mapeia_resposta(self) -> None:
+    def test_consultar_cartas_delega_e_retorna_cartas_do_servico(self) -> None:
         jogador_id = uuid4()
         carta = Carta(uuid4(), 1, "Bulbasaur", datetime.now(UTC), "inicial")
-        self.service.consultar_cartas_do_jogador.return_value = [carta]
+        cartas = [carta]
+        self.service.consultar_cartas_do_jogador.return_value = cartas
 
-        resposta = self.controller.consultar_cartas_do_jogador(
-            ConsultarCartasDoJogadorRequestDTO(jogador_id)
-        )
+        resposta = self.controller.consultar_cartas_do_jogador(jogador_id)
 
         self.service.consultar_cartas_do_jogador.assert_called_once_with(jogador_id)
-        self.assertEqual(len(resposta), 1)
-        self.assertEqual(resposta[0].carta_id, carta.carta_id)
-        self.assertEqual(resposta[0].pokemon_id, carta.pokemon_id)
-        self.assertEqual(resposta[0].nome_pokemon, carta.nome_pokemon)
-        self.assertEqual(resposta[0].data_obtencao, carta.data_obtencao)
-        self.assertEqual(resposta[0].origem, carta.origem)
+        self.assertIs(resposta, cartas)
 
-    def test_consultar_posse_delega_e_mapeia_resposta(self) -> None:
-        request = ConsultarPosseCartaRequestDTO(uuid4(), uuid4())
+    def test_consultar_posse_delega_e_retorna_booleano(self) -> None:
+        jogador_id, carta_id = uuid4(), uuid4()
         self.service.consultar_posse_carta.return_value = True
 
-        resposta = self.controller.consultar_posse_carta(request)
+        resposta = self.controller.consultar_posse_carta(jogador_id, carta_id)
 
         self.service.consultar_posse_carta.assert_called_once_with(
-            request.jogador_id, request.carta_id
+            jogador_id, carta_id
         )
-        self.assertTrue(resposta.possui)
+        self.assertIs(resposta, True)
 
     def test_atualizar_posse_delega(self) -> None:
-        request = AtualizarPosseRequestDTO(uuid4(), uuid4())
+        carta_id, novo_jogador_id = uuid4(), uuid4()
 
-        resultado = self.controller.atualizar_posse(request)
+        resultado = self.controller.atualizar_posse(carta_id, novo_jogador_id)
 
         self.service.atualizar_posse.assert_called_once_with(
-            request.carta_id, request.novo_jogador_id
+            carta_id, novo_jogador_id
         )
         self.assertIsNone(resultado)

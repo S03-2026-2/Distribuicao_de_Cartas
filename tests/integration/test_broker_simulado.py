@@ -5,8 +5,7 @@ from uuid import uuid4
 
 from werkzeug.serving import make_server
 
-from cartas.presentation.consumers.composicao import montar_roteador
-from cartas.presentation.consumers.receptor_http import criar_app
+from cartas.presentation.consumers.composicao import montar_app
 from cartas.service.distribuicao_cartas import DistribuicaoCartasService
 from cartas.service.posse_carta import PosseCartaService
 from tests.integration.broker_simulado import BrokerSimulado
@@ -18,7 +17,7 @@ class BrokerSimuladoTest(TestCase):
     def setUp(self) -> None:
         self.distribuicao = Mock(spec=DistribuicaoCartasService)
         self.posse = Mock(spec=PosseCartaService)
-        self.app = criar_app(montar_roteador(self.distribuicao, self.posse))
+        self.app = montar_app(self.distribuicao, self.posse)
         self.servidor = make_server("127.0.0.1", 0, self.app)
         self.thread = threading.Thread(target=self.servidor.serve_forever, daemon=True)
         self.thread.start()
