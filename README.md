@@ -23,9 +23,33 @@ Na execução local, o catálogo de Pokémon e a publicação de eventos usam mo
 uv run pytest
 ```
 
-## Organização do serviço
+## Arquitetura
 
-`presentation` recebe requisições HTTP, valida os dados e delega o trabalho aos serviços. `service` contém os casos de uso e os contratos de suas dependências. `model` representa jogadores, cartas e eventos. `repository` contém o repositório em memória. `integration` contém adaptadores externos e mocks. A composição local está em [`main.py`](./src/cartas/main.py).
+O serviço adota a **arquitetura hexagonal (Ports & Adapters)**, organizada em camadas: o núcleo contém as regras e os casos de uso, enquanto adaptadores conectam suas portas às tecnologias externas. O núcleo não depende das implementações de infraestrutura.
+
+### Comparação arquitetural
+
+| Arquitetura | Comparação |
+|---|---|
+| **Hexagonal** | Isola os casos de uso das tecnologias externas por meio de portas e adaptadores, facilitando testes e desenvolvimento paralelo. |
+| **Camadas com dependências concretas** | Também separa responsabilidades, mas os serviços poderiam depender diretamente da PokéAPI ou do repositório, dificultando testes e desenvolvimento independente. |
+
+### Núcleo e infraestrutura
+
+- **Domínio e aplicação:** [`model`](./src/cartas/model/) representa conceitos como [`Jogador`](./src/cartas/model/jogador.py), [`Carta`](./src/cartas/model/carta.py) e [`Pokemon`](./src/cartas/model/pokemon.py). Os serviços de [distribuição](./src/cartas/service/distribuicao_cartas.py) e [posse](./src/cartas/service/posse_carta.py) coordenam os casos de uso e aplicam regras de negócio.
+- **Infraestrutura:** [`presentation`](./src/cartas/presentation/) expõe a API e recebe eventos; [`repository`](./src/cartas/repository/) armazena jogadores e cartas; e [`integration`](./src/cartas/integration/) concentra a comunicação com sistemas externos e os mocks.
+
+### Portas e adaptadores
+
+As portas são contratos definidos com `Protocol`; os adaptadores ficam na periferia e os acionam ou implementam:
+
+| Tipo | Papel | Exemplos no projeto |
+|---|---|---|
+| **Portas de entrada** | Definem operações oferecidas pela aplicação. | [`DistribuicaoCartasService`](./src/cartas/service/distribuicao_cartas.py) e [`PosseCartaService`](./src/cartas/service/posse_carta.py). |
+| **Adaptadores de entrada** | Recebem chamadas externas e acionam os serviços. | [`CartasController`](./src/cartas/presentation/controllers/cartas_controller.py), [`JogadorCriadoConsumer`](./src/cartas/presentation/consumers/jogador_criado_consumer.py) e [`TrocaConcluidaConsumer`](./src/cartas/presentation/consumers/troca_concluida_consumer.py). |
+| **Portas de saída** | Definem operações necessárias ao núcleo. | Contratos de [catálogo, repositório e publicação](./src/cartas/service/distribuicao_cartas_ports.py) e de [repositório de posse](./src/cartas/service/posse_carta_ports.py). |
+
+[`main.py`](./src/cartas/main.py) conecta as dependências: a execução local usa catálogo e publisher simulados e um repositório em memória. Os adaptadores HTTP para PokéAPI e broker existem, mas não são usados nessa composição. Não há banco de dados nem persistência após o encerramento do processo.
 
 ## Padrões e responsabilidades
 
