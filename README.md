@@ -29,10 +29,12 @@ O serviço adota a **arquitetura hexagonal (Ports & Adapters)**, organizada em c
 
 ### Comparação arquitetural
 
-| Arquitetura                            | Comparação                                                                                                                                                       |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hexagonal**                          | Isola os casos de uso das tecnologias externas por meio de portas e adaptadores, facilitando testes e desenvolvimento paralelo.                                  |
-| **Camadas com dependências concretas** | Também separa responsabilidades, mas os serviços poderiam depender diretamente da PokéAPI ou do repositório, dificultando testes e desenvolvimento independente. |
+| Arquitetura | Comparação |
+| --- | --- |
+| **Arquitetura Hexagonal (Ports & Adapters)** | Foco no isolamento total do núcleo: A aplicação é dividida entre o núcleo (regras de negócio e contratos/portas) e as bordas (adaptadores externos). Todas as dependências apontam estritamente de fora para dentro; o núcleo desconhece qualquer tecnologia de entrada (APIs, filas, UI) ou de saída (bancos de dados, serviços externos). |
+| **Clean Architecture** | Segue a mesma regra de dependências de fora para dentro da arquitetura hexagonal, mas explicita a separação em círculos: entidades, casos de uso, adaptadores de interface e frameworks. |
+
+Escolhemos a arquitetura hexagonal porque, para o escopo da distribuição de cartas, a distinção entre núcleo, portas e adaptadores já isola as regras de negócio e permite testá-las sem acessar a PokéAPI ou o broker. Formalizar os limites entre todos os círculos da Clean Architecture acrescentaria convenções e nomenclatura sem um ganho proporcional de desacoplamento ou testabilidade.
 
 ### Núcleo e infraestrutura
 
