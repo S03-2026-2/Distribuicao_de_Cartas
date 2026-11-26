@@ -3,7 +3,7 @@ from flask import Flask
 from cartas.integration.mocks import CatalogoPokemonMock, PublisherMock
 from cartas.presentation.consumers.composicao import montar_app
 from cartas.service.distribuicao_cartas import DistribuicaoCartasServiceImpl
-from cartas.service.jogador_cartas_repository import JogadorCartasRepositoryImpl
+from cartas.repository.jogador_cartas_repository import JogadorCartasRepositoryImpl
 from cartas.service.posse_carta import PosseCartaServiceImpl
 from cartas.service.sorteio import SorteioAleatorioStrategy
 
