@@ -23,15 +23,15 @@ Na execução local, o catálogo de Pokémon e a publicação de eventos usam mo
 uv run pytest
 ```
 
-## Padrões arquiteturais
+## Padrões Arquiteturais
 
 O serviço adota a **arquitetura hexagonal (Ports & Adapters)**, organizada em camadas: o núcleo contém as regras e os casos de uso, enquanto adaptadores conectam suas portas às tecnologias externas. O núcleo não depende das implementações de infraestrutura.
 
 ### Comparação arquitetural
 
-| Arquitetura | Comparação |
-|---|---|
-| **Hexagonal** | Isola os casos de uso das tecnologias externas por meio de portas e adaptadores, facilitando testes e desenvolvimento paralelo. |
+| Arquitetura                            | Comparação                                                                                                                                                       |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hexagonal**                          | Isola os casos de uso das tecnologias externas por meio de portas e adaptadores, facilitando testes e desenvolvimento paralelo.                                  |
 | **Camadas com dependências concretas** | Também separa responsabilidades, mas os serviços poderiam depender diretamente da PokéAPI ou do repositório, dificultando testes e desenvolvimento independente. |
 
 ### Núcleo e infraestrutura
@@ -43,17 +43,13 @@ O serviço adota a **arquitetura hexagonal (Ports & Adapters)**, organizada em c
 
 As portas são contratos definidos com `Protocol`; os adaptadores ficam na periferia e os acionam ou implementam:
 
-| Tipo | Papel | Exemplos no projeto |
-|---|---|---|
-| **Portas de entrada** | Definem operações oferecidas pela aplicação. | [`DistribuicaoCartasService`](./src/cartas/service/distribuicao_cartas.py) e [`PosseCartaService`](./src/cartas/service/posse_carta.py). |
+| Tipo                       | Papel                                            | Exemplos no projeto                                                                                                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portas de entrada**      | Definem operações oferecidas pela aplicação.     | [`DistribuicaoCartasService`](./src/cartas/service/distribuicao_cartas.py) e [`PosseCartaService`](./src/cartas/service/posse_carta.py).                                                                                                                                   |
 | **Adaptadores de entrada** | Recebem chamadas externas e acionam os serviços. | [`CartasController`](./src/cartas/presentation/controllers/cartas_controller.py), [`JogadorCriadoConsumer`](./src/cartas/presentation/consumers/jogador_criado_consumer.py) e [`TrocaConcluidaConsumer`](./src/cartas/presentation/consumers/troca_concluida_consumer.py). |
-| **Portas de saída** | Definem operações necessárias ao núcleo. | Contratos de [catálogo, repositório e publicação](./src/cartas/service/distribuicao_cartas_ports.py) e de [repositório de posse](./src/cartas/service/posse_carta_ports.py). |
+| **Portas de saída**        | Definem operações necessárias ao núcleo.         | Contratos de [catálogo, repositório e publicação](./src/cartas/service/distribuicao_cartas_ports.py) e de [repositório de posse](./src/cartas/service/posse_carta_ports.py).                                                                                               |
 
 [`main.py`](./src/cartas/main.py) conecta as dependências: a execução local usa catálogo e publisher simulados e um repositório em memória. Os adaptadores HTTP para PokéAPI e broker existem, mas não são usados nessa composição. Não há banco de dados nem persistência após o encerramento do processo.
-
-### MVC e SPA
-
-MVC não é a arquitetura principal do serviço. Há controllers, modelos de domínio e respostas JSON, mas a aplicação está organizada principalmente em Ports & Adapters; não há uma camada `View` independente típica do MVC. SPA descreve uma arquitetura de aplicação frontend e não se aplica a este repositório, que contém somente a API backend.
 
 ## Injeção de dependência
 
@@ -69,15 +65,15 @@ distribuicao = DistribuicaoCartasServiceImpl(
 posse = PosseCartaServiceImpl(repositorio)
 ```
 
-## Design Patterns GoF
+## Design Patterns
 
 Os padrões GoF identificados diretamente no código são:
 
-| Padrão | Categoria | Aplicação |
-|---|---|---|
-| [Adapter](#adapter) | Estrutural | Adapta payloads externos aos tipos usados pelo serviço |
-| [Decorator](#decorator) | Estrutural | Acrescenta cache ao catálogo |
-| [Strategy](#strategy) | Comportamental | Permite variar o algoritmo de sorteio |
+| Padrão                  | Categoria      | Aplicação                                              |
+| ----------------------- | -------------- | ------------------------------------------------------ |
+| [Adapter](#adapter)     | Estrutural     | Adapta payloads externos aos tipos usados pelo serviço |
+| [Decorator](#decorator) | Estrutural     | Acrescenta cache ao catálogo                           |
+| [Strategy](#strategy)   | Comportamental | Permite variar o algoritmo de sorteio                  |
 
 ### Adapter
 
@@ -130,13 +126,13 @@ class SorteioAleatorioStrategy(SorteioStrategy):
 
 Os itens abaixo também aparecem no código, mas não fazem parte do catálogo GoF usado acima. Repository e Data Mapper tratam da persistência; DTO e Gateway são padrões de aplicação/integração; Publisher/Producer descreve a publicação de mensagens.
 
-| Padrão/conceito | Aplicação neste serviço | Código |
-|---|---|---|
-| [Repository](#repository) | Mantém a posse das cartas e as consultas por jogador ou carta | [`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py) |
-| [Data Mapper](#data-mapper) | Converte entre `Jogador` e a estrutura em memória | [`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py) |
-| [DTO](#dto) | Transporta dados da API sem expor o modelo de domínio | [`posse_carta.py`](./src/cartas/presentation/dtos/posse_carta.py) |
-| [Gateway](#gateway) | Encapsula requisições ao catálogo PokéAPI | [`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py) |
-| [Publisher/Producer](#publisherproducer) | Formata e encaminha eventos de distribuição | [`cartas_distribuidas_publisher.py`](./src/cartas/integration/cartas_distribuidas_publisher.py) |
+| Padrão/conceito                          | Aplicação neste serviço                                       | Código                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [Repository](#repository)                | Mantém a posse das cartas e as consultas por jogador ou carta | [`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py)          |
+| [Data Mapper](#data-mapper)              | Converte entre `Jogador` e a estrutura em memória             | [`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py)          |
+| [DTO](#dto)                              | Transporta dados da API sem expor o modelo de domínio         | [`posse_carta.py`](./src/cartas/presentation/dtos/posse_carta.py)                               |
+| [Gateway](#gateway)                      | Encapsula requisições ao catálogo PokéAPI                     | [`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py)                           |
+| [Publisher/Producer](#publisherproducer) | Formata e encaminha eventos de distribuição                   | [`cartas_distribuidas_publisher.py`](./src/cartas/integration/cartas_distribuidas_publisher.py) |
 
 ### Repository
 
@@ -208,13 +204,13 @@ def publicar(self, evento: EventoCartasDistribuidas) -> None:
 
 ## Endpoints disponíveis
 
-| Método | Rota | Descrição |
-|---|---|---|
-| `POST` | `/eventos/jogador-criado` | Recebe a criação de jogador e distribui cinco cartas |
-| `POST` | `/eventos/troca-concluida` | Atualiza a posse após uma troca |
-| `GET` | `/jogadores/{jogador_id}/cartas` | Lista as cartas do jogador |
-| `GET` | `/jogadores/{jogador_id}/cartas/{carta_id}/posse` | Verifica a posse de uma carta |
-| `PUT` | `/cartas/{carta_id}/posse` | Transfere uma carta para outro jogador |
+| Método | Rota                                              | Descrição                                            |
+| ------ | ------------------------------------------------- | ---------------------------------------------------- |
+| `POST` | `/eventos/jogador-criado`                         | Recebe a criação de jogador e distribui cinco cartas |
+| `POST` | `/eventos/troca-concluida`                        | Atualiza a posse após uma troca                      |
+| `GET`  | `/jogadores/{jogador_id}/cartas`                  | Lista as cartas do jogador                           |
+| `GET`  | `/jogadores/{jogador_id}/cartas/{carta_id}/posse` | Verifica a posse de uma carta                        |
+| `PUT`  | `/cartas/{carta_id}/posse`                        | Transfere uma carta para outro jogador               |
 
 O evento `jogador-criado` recebe `jogador_id`. O evento `troca-concluida` recebe `carta_id`, `novo_jogador_id` e `troca_id`. Exemplo:
 
