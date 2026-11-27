@@ -1,6 +1,3 @@
-# Contratos criados para possibilitar o desenvolvimento do service sem a implementação de catalogo,
-# repository e publisher. Vao ser trocados pelas interfaces quando elas forem criadas.
-
 from collections.abc import Iterable
 from typing import Protocol
 from uuid import UUID
