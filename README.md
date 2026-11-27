@@ -17,6 +17,10 @@ A API fica disponível em `http://127.0.0.1:5000`.
 
 Na execução local, o catálogo de Pokémon e a publicação de eventos usam mocks em memória. Não há conexão com a PokéAPI, Broker ou outras aplicações. Jogadores, cartas e eventos publicados são perdidos ao reiniciar o processo. Os adaptadores HTTP continuam disponíveis para testes e integrações futuras.
 
+### Documentação da API
+
+Com o serviço em execução, abra a [Swagger UI](http://127.0.0.1:5000/docs) e use **Try it out** para enviar requisições. A interface carrega os arquivos do Swagger UI de uma CDN e precisa de internet no navegador. A [especificação OpenAPI](./src/cartas/presentation/openapi.json) também está disponível em `GET /openapi.json`, sem acesso externo.
+
 ### Testes
 
 ```bash
