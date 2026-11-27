@@ -71,6 +71,332 @@ distribuicao = DistribuicaoCartasServiceImpl(
 posse = PosseCartaServiceImpl(repositorio)
 ```
 
+## SOLID
+
+Os cinco princípios SOLID e a Lei de Demeter aparecem na forma como o serviço divide responsabilidades e dependências. Cada subseção abaixo mostra trechos reais do código em que o princípio é aplicado. Os pontos em que a aplicação ainda é incompleta estão reunidos em [Limitações conhecidas](#limitações-conhecidas).
+
+| Princípio | Ideia central | Onde aparece |
+| --- | --- | --- |
+| [SRP](#s--single-responsibility-principle-srp) | Cada módulo tem um único motivo para mudar | Transporte HTTP, mapeamento, cache, serialização e validação de transferência separados |
+| [OCP](#o--openclosed-principle-ocp) | Estender o comportamento sem modificar o código existente | Estratégia de sorteio, cache como decorator, registro de eventos no roteador |
+| [LSP](#l--liskov-substitution-principle-lsp) | Implementações substituem o contrato sem quebrar quem o usa | Mocks e adaptadores reais na mesma porta, hierarquia de exceções |
+| [ISP](#i--interface-segregation-principle-isp) | Ninguém depende de métodos que não usa | Clientes HTTP de leitura e escrita, repositórios por caso de uso |
+| [DIP](#d--dependency-inversion-principle-dip) | O núcleo depende de abstrações; a infraestrutura as implementa | Portas `Protocol` no pacote `service`, adaptadores apontando para dentro |
+| [Lei de Demeter](#lei-de-demeter) | Cada objeto conversa apenas com seus colaboradores diretos | `Jogador.possui_pokemon`, cadeia publisher → mensageiro → HTTP, consumers |
+
+### S - Single Responsibility Principle (SRP)
+
+Uma classe ou módulo deve ter um único motivo para mudar. Na integração com sistemas externos, cada etapa ficou em um módulo próprio, de modo que uma mudança em uma delas não alcança as outras:
+
+| Responsabilidade | Código | Muda quando… |
+| --- | --- | --- |
+| Transporte HTTP/JSON | [`ClienteJSONUrllib`](./src/cartas/integration/cliente_http.py) | Mudam timeout, cabeçalhos ou a biblioteca HTTP |
+| Endereços e paginação da PokéAPI | [`PokeAPIClient`](./src/cartas/integration/catalogo_pokemon.py) | Mudam as rotas da PokéAPI |
+| Tradução do JSON da PokéAPI para o domínio | [`mapeador_pokeapi.py`](./src/cartas/integration/mapeador_pokeapi.py) | Muda o formato da resposta da PokéAPI |
+| Cache do catálogo | [`CatalogoPokemonEmCache`](./src/cartas/integration/catalogo_pokemon.py) | Muda a política de cache |
+| Formato do evento publicado | [`serializador_cartas_distribuidas.py`](./src/cartas/integration/serializador_cartas_distribuidas.py) | Muda o contrato do evento `cartas-distribuidas` |
+| Destino do evento | [`CartasDistribuidasPublisher`](./src/cartas/integration/cartas_distribuidas_publisher.py) | Muda o tópico |
+| Convenção de URL do broker | [`MensageiroBrokerHTTP`](./src/cartas/integration/mensageiro_broker.py) | Muda a API do broker |
+| Detecção de conflito em transferências | [`validacao_transferencia.py`](./src/cartas/service/validacao_transferencia.py) | Muda a regra de concorrência |
+
+O cache foi separado do client justamente para manter uma responsabilidade por classe, como registra o próprio código.
+
+[`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py):
+
+```python
+# A política de uso justo da PokéAPI pede cache local. Fica num decorator para que o
+# client continue responsável só pelo acesso. Dados de um pokémon não mudam, então não
+# expiram; a lista de IDs expira para incluir pokémon novos. Falhas não são guardadas
+# para que a próxima chamada tente de novo.
+class CatalogoPokemonEmCache(PokemonCatalogo):
+```
+
+O publisher decide apenas *para onde* o evento vai; *como* ele vira JSON é responsabilidade do serializador.
+
+[`cartas_distribuidas_publisher.py`](./src/cartas/integration/cartas_distribuidas_publisher.py):
+
+```python
+def publicar(self, evento: EventoCartasDistribuidas) -> None:
+    self._mensageiro.enviar(self._topico, serializar_cartas_distribuidas(evento))
+```
+
+O repositório cuida do armazenamento e do lock, mas delega a regra que decide se uma transferência é válida diante de alterações concorrentes.
+
+[`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py):
+
+```python
+with self._lock:
+    origem_persistida = self._obter_persistido(origem.jogador_id)
+    destino_persistido = self._obter_persistido(destino.jogador_id)
+    validar_transferencia(
+        origem_persistida, destino_persistido, origem_nova, destino_novo
+    )
+    self._gravar(origem.jogador_id, origem_nova)
+    self._gravar(destino.jogador_id, destino_novo)
+```
+
+### O - Open/Closed Principle (OCP)
+
+O código deve estar aberto para extensão e fechado para modificação. Há três pontos de extensão explícitos.
+
+**Algoritmo de sorteio.** `DistribuicaoCartasServiceImpl` só conhece o contrato `SorteioStrategy`. Um novo algoritmo (por raridade, por tipo, determinístico para testes) é uma nova classe, sem alterar o serviço. O teste `test_usa_estrategia_injetada_para_distribuir` faz exatamente isso com um sorteio fixo.
+
+[`sorteio.py`](./src/cartas/service/sorteio.py) e [`distribuicao_cartas.py`](./src/cartas/service/distribuicao_cartas.py):
+
+```python
+class SorteioStrategy(Protocol):
+    def sortear(self, ids: Sequence[int]) -> tuple[int, ...]:
+        """Retorna cinco IDs distintos pertencentes à sequência recebida."""
+        ...
+```
+
+```python
+ids_disponiveis = tuple(self._catalogo.listar_ids_disponiveis())
+ids_sorteados = self._sorteio.sortear(ids_disponiveis)
+```
+
+**Cache do catálogo.** O cache foi acrescentado envolvendo o `PokeAPIClient`, que não precisou ser alterado. Outros comportamentos (log, métricas, retentativas) podem ser empilhados da mesma forma.
+
+[`integration/composicao.py`](./src/cartas/integration/composicao.py):
+
+```python
+def criar_catalogo_pokeapi(
+    url_base: str = URL_BASE_POKEAPI,
+    timeout: float = TIMEOUT_PADRAO_SEGUNDOS,
+) -> PokemonCatalogo:
+    return CatalogoPokemonEmCache(PokeAPIClient(ClienteJSONUrllib(timeout), url_base))
+```
+
+**Novos eventos.** Para tratar um novo evento basta criar um conversor e um `Consumer` e registrá-los na composição. `RoteadorEventos.rotear` e a rota `POST /eventos/<nome>` do receptor HTTP não mudam.
+
+[`roteador_eventos.py`](./src/cartas/presentation/consumers/roteador_eventos.py) e [`consumers/composicao.py`](./src/cartas/presentation/consumers/composicao.py):
+
+```python
+def rotear(self, nome: str, payload: object) -> None:
+    tratador = self._tratadores.get(nome)
+    if tratador is None:
+        raise EventoDesconhecidoError(f"Evento desconhecido: {nome}.")
+    tratador(payload)
+```
+
+```python
+roteador.registrar(
+    EVENTO_TROCA_CONCLUIDA,
+    converter_troca_concluida,
+    TrocaConcluidaConsumer(posse),
+)
+```
+
+### L - Liskov Substitution Principle (LSP)
+
+Qualquer implementação de um contrato deve poder substituir outra sem que o código cliente perceba. Isso exige contratos explícitos - tipos, pós-condições e erros possíveis - e implementações que os respeitem.
+
+**Mesma porta, implementações intercambiáveis.** `PokemonCatalogo` tem três implementações: `CatalogoPokemonMock`, `PokeAPIClient` e `CatalogoPokemonEmCache`. `Publisher[EventoCartasDistribuidas]` tem `PublisherMock` e `CartasDistribuidasPublisher`. O serviço de distribuição funciona com qualquer uma delas; só a composição muda.
+
+[`main.py`](./src/cartas/main.py) (execução local) e [`integration/composicao.py`](./src/cartas/integration/composicao.py) (integração real):
+
+```python
+distribuicao = DistribuicaoCartasServiceImpl(
+    CatalogoPokemonMock(),
+    repositorio,
+    PublisherMock(),
+    SorteioAleatorioStrategy(),
+)
+```
+
+```python
+return CatalogoPokemonEmCache(PokeAPIClient(ClienteJSONUrllib(timeout), url_base))
+```
+
+**Exceções que respeitam o contrato.** As falhas da PokéAPI herdam de exceções que o núcleo já conhece. Um chamador que trata `ConnectionError` ou `CatalogoPokemonInvalidoError` continua correto quando o catálogo simulado é trocado pelo real, sem precisar conhecer detalhes da PokéAPI.
+
+[`erros_catalogo_pokemon.py`](./src/cartas/integration/errors/erros_catalogo_pokemon.py):
+
+```python
+# As bases são exceções que o serviço já conhece, para que ele trate as falhas sem
+# depender de detalhes da PokéAPI: ConnectionError indica que vale tentar de novo.
+class PokeAPIIndisponivelError(ConnectionError):
+    pass
+
+
+class RespostaPokeAPIInvalidaError(CatalogoPokemonInvalidoError):
+    pass
+```
+
+**Pós-condição documentada e verificada.** O contrato de `SorteioStrategy` declara a pós-condição na docstring ("cinco IDs distintos pertencentes à sequência recebida"), e o serviço rejeita uma implementação que a viole antes de consultar o catálogo ou gravar qualquer dado. O teste `test_estrategia_invalida_nao_consulta_pokemon_nem_grava` cobre esse caso.
+
+[`distribuicao_cartas.py`](./src/cartas/service/distribuicao_cartas.py):
+
+```python
+if (
+    len(ids_sorteados) != 5
+    or len(set(ids_sorteados)) != 5
+    or not set(ids_sorteados).issubset(ids_disponiveis)
+):
+    raise ValueError("A estratégia deve retornar cinco IDs distintos do catálogo.")
+```
+
+### I - Interface Segregation Principle (ISP)
+
+Nenhum cliente deve depender de métodos que não usa. As portas foram recortadas pelo que cada cliente precisa, e não pelo que a implementação oferece.
+
+**Leitura e escrita HTTP separadas.** `ClienteJSONUrllib` implementa as duas interfaces, mas `PokeAPIClient` depende só da leitura e `MensageiroBrokerHTTP` só da escrita. O catálogo não consegue enviar dados, e o mensageiro não consegue fazer `GET`.
+
+[`cliente_http.py`](./src/cartas/integration/cliente_http.py), [`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py) e [`mensageiro_broker.py`](./src/cartas/integration/mensageiro_broker.py) (docstrings e parâmetros opcionais omitidos):
+
+```python
+class ClienteJSONLeitura(Protocol):
+    def obter_json(self, url: str) -> object:
+        ...
+
+
+class ClienteJSONEscrita(Protocol):
+    def enviar_json(self, url: str, corpo: Mapping[str, object]) -> None:
+        ...
+
+
+class ClienteJSONUrllib(ClienteJSONLeitura, ClienteJSONEscrita):
+```
+
+```python
+class PokeAPIClient(PokemonCatalogo):
+    def __init__(self, http: ClienteJSONLeitura, ...) -> None:
+
+class MensageiroBrokerHTTP(MensageiroBroker):
+    def __init__(self, http: ClienteJSONEscrita, url_base: str) -> None:
+```
+
+**Um repositório por caso de uso.** A distribuição precisa apenas criar e buscar jogadores; a posse precisa buscar por carta e salvar transferências. Cada serviço declara a própria porta, e a implementação em memória atende às duas.
+
+[`distribuicao_cartas_ports.py`](./src/cartas/service/distribuicao_cartas_ports.py) e [`posse_carta_ports.py`](./src/cartas/service/posse_carta_ports.py) (docstrings omitidas):
+
+```python
+# distribuicao_cartas_ports.py
+class JogadorCartasRepository(Protocol):
+    def buscar_por_id(self, jogador_id: UUID) -> Jogador | None: ...
+    def salvar(self, jogador: Jogador) -> bool: ...
+```
+
+```python
+# posse_carta_ports.py
+class JogadorCartasRepository(Protocol):
+    def buscar_por_id(self, jogador_id: UUID) -> Jogador | None: ...
+    def buscar_por_carta_id(self, carta_id: UUID) -> Jogador | None: ...
+    def salvar_transferencia(self, origem: Jogador, destino: Jogador) -> None: ...
+```
+
+[`jogador_cartas_repository.py`](./src/cartas/repository/jogador_cartas_repository.py):
+
+```python
+class JogadorCartasRepositoryImpl(RepositorioDeDistribuicao, RepositorioDePosse):
+```
+
+O mesmo vale para [`Consumer[T]`](./src/cartas/presentation/consumers/consumer.py), que tem um único método (`consumir`) - tudo de que o roteador precisa.
+
+### D - Dependency Inversion Principle (DIP)
+
+Módulos de alto nível não dependem de módulos de baixo nível; ambos dependem de abstrações, e as abstrações pertencem ao núcleo. No projeto:
+
+- As portas de saída (`PokemonCatalogo`, `JogadorCartasRepository`, `Publisher`) são `Protocol`s definidos no pacote [`service`](./src/cartas/service/), e não em `integration` ou `repository`.
+- `service` e `model` não importam nada de `integration`, `repository` ou `presentation`.
+- Os adaptadores importam as portas do núcleo para implementá-las: a dependência aponta de fora para dentro.
+- `presentation` depende apenas dos contratos dos serviços (`DistribuicaoCartasService`, `PosseCartaService`), nunca das classes `Impl`.
+
+```text
+presentation ──► service (contratos)  ◄── integration
+                    │                 ◄── repository
+                    ▼
+                  model
+```
+
+O serviço recebe apenas abstrações no construtor.
+
+[`distribuicao_cartas.py`](./src/cartas/service/distribuicao_cartas.py):
+
+```python
+class DistribuicaoCartasServiceImpl(DistribuicaoCartasService):
+    def __init__(
+        self,
+        catalogo: PokemonCatalogo,
+        repositorio: JogadorCartasRepository,
+        publisher: Publisher[EventoCartasDistribuidas],
+        sorteio: SorteioStrategy,
+    ) -> None:
+```
+
+O adaptador importa a porta do núcleo e a implementa.
+
+[`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py):
+
+```python
+from cartas.service.distribuicao_cartas_ports import PokemonCatalogo
+
+
+class PokeAPIClient(PokemonCatalogo):
+```
+
+O adaptador de entrada também depende do contrato, e não da implementação do serviço.
+
+[`jogador_criado_consumer.py`](./src/cartas/presentation/consumers/jogador_criado_consumer.py):
+
+```python
+class JogadorCriadoConsumer(Consumer[EventoJogadorCriado]):
+    def __init__(self, servico: DistribuicaoCartasService) -> None:
+        self._servico = servico
+```
+
+A escolha das implementações concretas fica na raiz de composição, descrita em [Injeção de dependência](#injeção-de-dependência).
+
+### Lei de Demeter
+
+A Lei de Demeter (ou princípio do menor conhecimento) diz que um método deve conversar apenas com seus colaboradores diretos - o próprio objeto, seus atributos, seus parâmetros e os objetos que cria - em vez de percorrer a estrutura interna de outros objetos (`a.b().c().d()`).
+
+**Perguntar ao jogador, não às cartas dele.** Para saber se um jogador possui um Pokémon, o serviço de posse pergunta ao `Jogador`, e não percorre `jogador.cartas` comparando `carta.pokemon_id`. A regra fica em um único lugar, e é a mesma que `adicionar_carta` usa para impedir Pokémon repetidos.
+
+[`posse_carta.py`](./src/cartas/service/posse_carta.py) e [`jogador.py`](./src/cartas/model/jogador.py):
+
+```python
+def consultar_posse_pokemon(self, jogador_id: UUID, pokemon_id: int) -> bool:
+    return self._buscar_jogador(jogador_id).possui_pokemon(pokemon_id)
+```
+
+```python
+def possui_pokemon(self, pokemon_id: int) -> bool:
+    return any(carta.pokemon_id == pokemon_id for carta in self._cartas.values())
+
+def adicionar_carta(self, carta: Carta) -> None:
+    if carta.carta_id in self._cartas:
+        raise ValueError("O jogador já possui esta carta.")
+    if self.possui_pokemon(carta.pokemon_id):
+        raise ValueError("O jogador já possui uma carta deste Pokémon.")
+    self._cartas[carta.carta_id] = carta
+```
+
+**Cada elo conhece só o próximo.** Na publicação de eventos, `CartasDistribuidasPublisher` conhece apenas o `MensageiroBroker`; não sabe que existe HTTP nem qual é a URL. `MensageiroBrokerHTTP` conhece apenas o `ClienteJSONEscrita`; não sabe que a implementação usa `urllib`. Nenhuma classe acessa o colaborador do seu colaborador.
+
+[`cartas_distribuidas_publisher.py`](./src/cartas/integration/cartas_distribuidas_publisher.py) e [`mensageiro_broker.py`](./src/cartas/integration/mensageiro_broker.py):
+
+```python
+self._mensageiro.enviar(self._topico, serializar_cartas_distribuidas(evento))
+```
+
+```python
+url = f"{self._url_base}/eventos/{quote(topico, safe='')}"
+try:
+    self._http.enviar_json(url, mensagem)
+```
+
+**Adaptadores de entrada finos.** Consumers e controller recebem dados prontos (o evento convertido ou os parâmetros da rota) e fazem uma única chamada ao serviço injetado.
+
+[`troca_concluida_consumer.py`](./src/cartas/presentation/consumers/troca_concluida_consumer.py):
+
+```python
+def consumir(self, evento: EventoTrocaConcluida) -> None:
+    self._servico.atualizar_posse(evento.carta_id, evento.novo_jogador_id)
+```
+
+O acesso a campos de `Carta`, `Pokemon` e dos eventos (como `evento.carta_id`) não viola a lei: são dataclasses imutáveis, estruturas de dados sem comportamento, e a Lei de Demeter trata de navegar por objetos com comportamento.
+
 ## Design Patterns
 
 Os padrões GoF identificados diretamente no código são:
