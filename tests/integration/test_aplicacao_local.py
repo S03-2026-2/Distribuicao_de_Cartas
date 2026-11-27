@@ -8,6 +8,28 @@ class AplicacaoLocalTest(TestCase):
     def setUp(self) -> None:
         self.cliente = criar_app().test_client()
 
+    def test_documentacao_openapi_disponivel(self) -> None:
+        interface = self.cliente.get("/docs")
+        self.assertEqual(interface.status_code, 200)
+        self.assertIn(b"SwaggerUIBundle", interface.data)
+        self.assertIn(b"./openapi.json", interface.data)
+
+        with self.cliente.get("/openapi.json") as resposta:
+            self.assertEqual(resposta.status_code, 200)
+            self.assertEqual(resposta.mimetype, "application/json")
+            documento = resposta.get_json()
+        self.assertEqual(documento["openapi"], "3.1.0")
+        self.assertEqual(
+            {rota: set(operacoes) for rota, operacoes in documento["paths"].items()},
+            {
+                "/eventos/jogador-criado": {"post"},
+                "/eventos/troca-concluida": {"post"},
+                "/jogadores/{jogador_id}/cartas": {"get"},
+                "/jogadores/{jogador_id}/cartas/{carta_id}/posse": {"get"},
+                "/cartas/{carta_id}/posse": {"put"},
+            },
+        )
+
     def test_evento_de_criacao_distribui_cartas_consultaveis(self) -> None:
         jogador_id = uuid4()
 

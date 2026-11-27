@@ -21,12 +21,14 @@ from cartas.presentation.dtos.posse_carta import (
     ConsultarPosseCartaResponseDTO,
 )
 from cartas.presentation.schema_validator import SchemaName, validate_payload
+from cartas.presentation.swagger import swagger
 
 
 def criar_app(
     roteador: RoteadorEventos, cartas_controller: CartasController
 ) -> Flask:
     app = Flask(__name__)
+    app.register_blueprint(swagger)
 
     @app.post("/eventos/<nome>")
     def receber_evento(nome: str) -> tuple[Response, int]:

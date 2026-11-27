@@ -1,0 +1,227 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Distribuição de Cartas",
+    "version": "0.1.0",
+    "description": "API HTTP para distribuição inicial, consulta de cartas e atualização de posse. Na execução local, os dados ficam em memória. Para experimentar, envie `jogador-criado` para dois UUIDs distintos, consulte as cartas dos jogadores e use o `carta_id` real de uma carta da origem cujo `pokemon_id` não esteja no destino."
+  },
+  "tags": [
+    {"name": "Eventos", "description": "Rotas HTTP de entrada. Nomes de evento não reconhecidos retornam 404."},
+    {"name": "Cartas"}
+  ],
+  "paths": {
+    "/eventos/jogador-criado": {
+      "post": {
+        "tags": ["Eventos"],
+        "summary": "Distribuir cartas iniciais",
+        "description": "Distribui cinco cartas de Pokémon distintos. Reenviar o evento para um jogador já cadastrado não redistribui cartas.",
+        "operationId": "receberJogadorCriado",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/JogadorCriado"},
+              "example": {"jogador_id": "11111111-1111-4111-8111-111111111111"}
+            }
+          }
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/EventoProcessado"},
+          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "500": {"$ref": "#/components/responses/FalhaInterna"}
+        }
+      }
+    },
+    "/eventos/troca-concluida": {
+      "post": {
+        "tags": ["Eventos"],
+        "summary": "Aplicar a transferência de uma troca",
+        "description": "Transfere a carta para um jogador cadastrado. O destino não pode ter outra carta do mesmo Pokémon. Use o ID obtido na consulta de cartas; o ID do exemplo é ilustrativo.",
+        "operationId": "receberTrocaConcluida",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/TrocaConcluida"},
+              "example": {
+                "carta_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "novo_jogador_id": "22222222-2222-4222-8222-222222222222",
+                "troca_id": "33333333-3333-4333-8333-333333333333"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"$ref": "#/components/responses/EventoProcessado"},
+          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "500": {
+            "description": "Falha no processamento do evento, inclusive se a carta ou o jogador não existir ou se houver conflito de posse.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+          }
+        }
+      }
+    },
+    "/jogadores/{jogador_id}/cartas": {
+      "get": {
+        "tags": ["Cartas"],
+        "summary": "Listar cartas de um jogador",
+        "operationId": "consultarCartasDoJogador",
+        "parameters": [{"$ref": "#/components/parameters/JogadorId"}],
+        "responses": {
+          "200": {
+            "description": "Cartas em posse do jogador. A lista pode estar vazia.",
+            "content": {
+              "application/json": {
+                "schema": {"type": "array", "items": {"$ref": "#/components/schemas/Carta"}}
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "404": {"$ref": "#/components/responses/JogadorNaoEncontrado"},
+          "500": {"$ref": "#/components/responses/FalhaInterna"}
+        }
+      }
+    },
+    "/jogadores/{jogador_id}/cartas/{carta_id}/posse": {
+      "get": {
+        "tags": ["Cartas"],
+        "summary": "Verificar se o jogador possui uma carta",
+        "description": "Retorna `possui: false` se o jogador existe, mas não tem uma carta com o ID informado.",
+        "operationId": "consultarPosseCarta",
+        "parameters": [
+          {"$ref": "#/components/parameters/JogadorId"},
+          {"$ref": "#/components/parameters/CartaId"}
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado da consulta de posse.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Posse"}}}
+          },
+          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "404": {"$ref": "#/components/responses/JogadorNaoEncontrado"},
+          "500": {"$ref": "#/components/responses/FalhaInterna"}
+        }
+      }
+    },
+    "/cartas/{carta_id}/posse": {
+      "put": {
+        "tags": ["Cartas"],
+        "summary": "Atualizar o dono de uma carta",
+        "description": "Transfere uma carta existente para outro jogador cadastrado. Se o jogador informado já for o dono, não altera a posse.",
+        "operationId": "atualizarPosseCarta",
+        "parameters": [{"$ref": "#/components/parameters/CartaId"}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/AtualizarPosse"},
+              "example": {"novo_jogador_id": "22222222-2222-4222-8222-222222222222"}
+            }
+          }
+        },
+        "responses": {
+          "204": {"description": "Operação concluída, sem corpo na resposta."},
+          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "404": {
+            "description": "Carta ou jogador de destino não encontrado.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+          },
+          "409": {
+            "description": "Conflito de posse, por exemplo se o destino já possui uma carta do mesmo Pokémon.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+          },
+          "500": {"$ref": "#/components/responses/FalhaInterna"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "JogadorId": {
+        "name": "jogador_id",
+        "in": "path",
+        "required": true,
+        "schema": {"type": "string", "format": "uuid"},
+        "example": "11111111-1111-4111-8111-111111111111"
+      },
+      "CartaId": {
+        "name": "carta_id",
+        "in": "path",
+        "required": true,
+        "description": "UUID de uma carta retornada pela consulta de cartas do jogador.",
+        "schema": {"type": "string", "format": "uuid"}
+      }
+    },
+    "schemas": {
+      "JogadorCriado": {
+        "type": "object",
+        "required": ["jogador_id"],
+        "properties": {"jogador_id": {"type": "string", "format": "uuid"}}
+      },
+      "TrocaConcluida": {
+        "type": "object",
+        "required": ["carta_id", "novo_jogador_id", "troca_id"],
+        "properties": {
+          "carta_id": {"type": "string", "format": "uuid"},
+          "novo_jogador_id": {"type": "string", "format": "uuid"},
+          "troca_id": {"type": "string", "format": "uuid"}
+        }
+      },
+      "AtualizarPosse": {
+        "type": "object",
+        "required": ["novo_jogador_id"],
+        "additionalProperties": false,
+        "properties": {"novo_jogador_id": {"type": "string", "format": "uuid"}}
+      },
+      "Carta": {
+        "type": "object",
+        "required": ["carta_id", "pokemon_id", "nome_pokemon", "data_obtencao", "origem"],
+        "additionalProperties": false,
+        "properties": {
+          "carta_id": {"type": "string", "format": "uuid"},
+          "pokemon_id": {"type": "integer"},
+          "nome_pokemon": {"type": "string"},
+          "data_obtencao": {"type": "string", "format": "date-time"},
+          "origem": {"type": "string"}
+        }
+      },
+      "Posse": {
+        "type": "object",
+        "required": ["possui"],
+        "additionalProperties": false,
+        "properties": {"possui": {"type": "boolean"}}
+      },
+      "Erro": {
+        "type": "object",
+        "required": ["status", "mensagem"],
+        "properties": {
+          "status": {"const": "erro"},
+          "mensagem": {"type": "string"}
+        }
+      }
+    },
+    "responses": {
+      "EventoProcessado": {
+        "description": "Evento processado.",
+        "content": {
+          "application/json": {
+            "schema": {"type": "object", "required": ["status"], "properties": {"status": {"const": "ok"}}},
+            "example": {"status": "ok"}
+          }
+        }
+      },
+      "EntradaInvalida": {
+        "description": "UUID inválido, campos obrigatórios ausentes ou corpo JSON incompatível com a operação.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+      },
+      "JogadorNaoEncontrado": {
+        "description": "Jogador não encontrado.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+      },
+      "FalhaInterna": {
+        "description": "Falha ao processar a requisição.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+      }
+    }
+  }
+}
