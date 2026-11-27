@@ -25,10 +25,14 @@ class AplicacaoLocalTest(TestCase):
                 "/eventos/jogador-criado": {"post"},
                 "/eventos/troca-concluida": {"post"},
                 "/jogadores/{jogador_id}/cartas": {"get"},
-                "/jogadores/{jogador_id}/cartas/{carta_id}/posse": {"get"},
+                "/jogadores/{jogador_id}/pokemons/{pokemon_id}/posse": {"get"},
                 "/cartas/{carta_id}/posse": {"put"},
             },
         )
+
+    def test_consulta_de_posse_de_jogador_inexistente_retorna_404(self) -> None:
+        resposta = self.cliente.get(f"/jogadores/{uuid4()}/pokemons/1/posse")
+        self.assertEqual(resposta.status_code, 404)
 
     def test_evento_de_criacao_distribui_cartas_consultaveis(self) -> None:
         jogador_id = uuid4()
@@ -65,6 +69,12 @@ class AplicacaoLocalTest(TestCase):
             if carta["pokemon_id"] not in pokemon_destino
         )
 
+        pokemon_id = carta["pokemon_id"]
+        posse_origem = f"/jogadores/{origem_id}/pokemons/{pokemon_id}/posse"
+        posse_destino = f"/jogadores/{destino_id}/pokemons/{pokemon_id}/posse"
+        self.assertEqual(self.cliente.get(posse_origem).get_json(), {"possui": True})
+        self.assertEqual(self.cliente.get(posse_destino).get_json(), {"possui": False})
+
         resposta_troca = self.cliente.post(
             "/eventos/troca-concluida",
             json={
@@ -81,6 +91,8 @@ class AplicacaoLocalTest(TestCase):
         ).get_json()
 
         self.assertEqual(resposta_troca.status_code, 200)
+        self.assertEqual(self.cliente.get(posse_origem).get_json(), {"possui": False})
+        self.assertEqual(self.cliente.get(posse_destino).get_json(), {"possui": True})
         self.assertNotIn(
             carta["carta_id"],
             {carta_origem["carta_id"] for carta_origem in cartas_origem_apos_troca},

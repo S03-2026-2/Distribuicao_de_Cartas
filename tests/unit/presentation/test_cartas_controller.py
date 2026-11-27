@@ -25,14 +25,12 @@ class CartasControllerTest(TestCase):
         self.assertIs(resposta, cartas)
 
     def test_consultar_posse_delega_e_retorna_booleano(self) -> None:
-        jogador_id, carta_id = uuid4(), uuid4()
-        self.service.consultar_posse_carta.return_value = True
+        jogador_id, pokemon_id = uuid4(), 1
+        self.service.consultar_posse_pokemon.return_value = True
 
-        resposta = self.controller.consultar_posse_carta(jogador_id, carta_id)
+        resposta = self.controller.consultar_posse_pokemon(jogador_id, pokemon_id)
 
-        self.service.consultar_posse_carta.assert_called_once_with(
-            jogador_id, carta_id
-        )
+        self.service.consultar_posse_pokemon.assert_called_once_with(jogador_id, pokemon_id)
         self.assertIs(resposta, True)
 
     def test_atualizar_posse_delega(self) -> None:

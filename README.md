@@ -228,8 +228,10 @@ def publicar(self, evento: EventoCartasDistribuidas) -> None:
 | `POST` | `/eventos/jogador-criado`                         | Recebe a criação de jogador e distribui cinco cartas |
 | `POST` | `/eventos/troca-concluida`                        | Atualiza a posse após uma troca                      |
 | `GET`  | `/jogadores/{jogador_id}/cartas`                  | Lista as cartas do jogador                           |
-| `GET`  | `/jogadores/{jogador_id}/cartas/{carta_id}/posse` | Verifica a posse de uma carta                        |
+| `GET`  | `/jogadores/{jogador_id}/pokemons/{pokemon_id}/posse` | Verifica se o jogador possui uma carta desse Pokémon |
 | `PUT`  | `/cartas/{carta_id}/posse`                        | Transfere uma carta para outro jogador               |
+
+Para verificar se um jogador possui Bulbasaur, use `GET /jogadores/{jogador_id}/pokemons/1/posse`. A consulta recebe o ID numérico do Pokémon: retorna `200` com `{"possui": true}` ou `{"possui": false}` para um jogador cadastrado, `400` se o ID for inválido e `404` se o jogador não existir. A transferência continua usando o UUID da carta (`carta_id`).
 
 O evento `jogador-criado` recebe `jogador_id`. O evento `troca-concluida` recebe `carta_id`, `novo_jogador_id` e `troca_id`. Exemplo:
 

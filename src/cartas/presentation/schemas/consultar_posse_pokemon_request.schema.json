@@ -1,21 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:cartas:schemas:consultar-posse-carta-request",
-  "title": "ConsultarPosseCartaRequest",
+  "$id": "urn:cartas:schemas:consultar-posse-pokemon-request",
+  "title": "ConsultarPossePokemonRequest",
   "type": "object",
   "properties": {
     "jogador_id": {
       "type": "string",
       "format": "uuid"
     },
-    "carta_id": {
-      "type": "string",
-      "format": "uuid"
+    "pokemon_id": {
+      "type": "integer",
+      "minimum": 1
     }
   },
   "required": [
     "jogador_id",
-    "carta_id"
+    "pokemon_id"
   ],
   "additionalProperties": false
 }

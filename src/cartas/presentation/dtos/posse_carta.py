@@ -9,9 +9,9 @@ class ConsultarCartasDoJogadorRequestDTO:
 
 
 @dataclass(frozen=True)
-class ConsultarPosseCartaRequestDTO:
+class ConsultarPossePokemonRequestDTO:
     jogador_id: UUID
-    carta_id: UUID
+    pokemon_id: int
 
 
 @dataclass(frozen=True)
@@ -30,5 +30,5 @@ class CartaResponseDTO:
 
 
 @dataclass(frozen=True)
-class ConsultarPosseCartaResponseDTO:
+class ConsultarPossePokemonResponseDTO:
     possui: bool

@@ -71,18 +71,22 @@ class ReceptorHttpTest(TestCase):
         )
 
     def test_consultar_posse_retorna_dto_serializado(self) -> None:
-        carta_id = uuid4()
-        self.posse.consultar_posse_carta.return_value = True
+        self.posse.consultar_posse_pokemon.return_value = True
 
-        resposta = self.client.get(
-            f"/jogadores/{self.jogador_id}/cartas/{carta_id}/posse"
-        )
+        resposta = self.client.get(f"/jogadores/{self.jogador_id}/pokemons/1/posse")
 
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual(resposta.get_json(), {"possui": True})
-        self.posse.consultar_posse_carta.assert_called_once_with(
-            self.jogador_id, carta_id
-        )
+        self.posse.consultar_posse_pokemon.assert_called_once_with(self.jogador_id, 1)
+
+    def test_pokemon_id_invalido_responde_400(self) -> None:
+        for pokemon_id in ("0", "-1", "1.5", str(uuid4())):
+            with self.subTest(pokemon_id=pokemon_id):
+                resposta = self.client.get(
+                    f"/jogadores/{self.jogador_id}/pokemons/{pokemon_id}/posse"
+                )
+                self.assertEqual(resposta.status_code, 400)
+        self.posse.consultar_posse_pokemon.assert_not_called()
 
     def test_atualizar_posse_retorna_204_e_delega(self) -> None:
         carta_id, novo_jogador_id = uuid4(), uuid4()
