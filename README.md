@@ -79,18 +79,46 @@ Os padrões GoF identificados diretamente no código são:
 
 ### Adapter
 
-O conversor adapta o payload recebido para um evento tipado usado pelo restante da aplicação. O mapeador da PokéAPI faz a mesma separação para dados do catálogo externo.
+O Adapter permite que objetos com interfaces incompatíveis colaborem: o adaptador implementa a interface que o cliente usa e envolve o objeto que faz o trabalho. Aparece em dois pontos:
 
-[`conversores.py`](./src/cartas/presentation/consumers/conversores.py):
+- `MensageiroBrokerHTTP` implementa `MensageiroBroker.enviar(topico, mensagem)`, que o publisher usa, e envolve `ClienteJSONEscrita.enviar_json(url, corpo)`. Ele converte o tópico em URL e os erros HTTP em erros do broker.
+- `RoteadorEventos.registrar` recebe um `Consumer[T]` tipado e o adapta à forma que o roteador sabe chamar: uma função que recebe o payload cru.
+
+Os conversores de payload e o mapeador da PokéAPI não são Adapters do GoF: são funções de tradução de dados, sem objeto envolvido. Eles estão em [Conversores e mapeadores](#conversores-e-mapeadores).
+
+[`mensageiro_broker.py`](./src/cartas/integration/mensageiro_broker.py):
 
 ```python
-def converter_troca_concluida(payload: object) -> EventoTrocaConcluida:
-    dados = _exigir_objeto(payload)
-    return EventoTrocaConcluida(
-        carta_id=_ler_uuid(dados, "carta_id"),
-        novo_jogador_id=_ler_uuid(dados, "novo_jogador_id"),
-        troca_id=_ler_uuid(dados, "troca_id"),
-    )
+class MensageiroBrokerHTTP(MensageiroBroker):
+    def __init__(self, http: ClienteJSONEscrita, url_base: str) -> None:
+        self._http = http
+        self._url_base = url_base.rstrip("/")
+
+    def enviar(self, topico: str, mensagem: Mapping[str, object]) -> None:
+        url = f"{self._url_base}/eventos/{quote(topico, safe='')}"
+        try:
+            self._http.enviar_json(url, mensagem)
+        except ServicoExternoIndisponivelError as erro:
+            raise BrokerIndisponivelError(str(erro)) from erro
+        except RespostaHTTPError as erro:
+            if erro.transitoria:
+                raise BrokerIndisponivelError(str(erro)) from erro
+            raise MensagemRejeitadaPeloBrokerError(str(erro)) from erro
+```
+
+[`roteador_eventos.py`](./src/cartas/presentation/consumers/roteador_eventos.py):
+
+```python
+def registrar[T](
+    self,
+    nome: str,
+    conversor: Callable[[object], T],
+    consumidor: Consumer[T],
+) -> None:
+    def tratar(payload: object) -> None:
+        consumidor.consumir(conversor(payload))
+
+    self._tratadores[nome] = tratar
 ```
 
 ### Decorator
