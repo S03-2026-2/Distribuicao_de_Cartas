@@ -74,7 +74,6 @@ Os padrões GoF identificados diretamente no código são:
 | Padrão                  | Categoria      | Aplicação                                              |
 | ----------------------- | -------------- | ------------------------------------------------------ |
 | [Adapter](#adapter)     | Estrutural     | Adapta payloads externos aos tipos usados pelo serviço |
-| [Decorator](#decorator) | Estrutural     | Acrescenta cache ao catálogo                           |
 | [Strategy](#strategy)   | Comportamental | Permite variar o algoritmo de sorteio                  |
 
 ### Adapter
@@ -119,20 +118,6 @@ def registrar[T](
         consumidor.consumir(conversor(payload))
 
     self._tratadores[nome] = tratar
-```
-
-### Decorator
-
-`CatalogoPokemonEmCache` envolve outro catálogo e adiciona cache sem modificar o gateway. Os Pokémon consultados ficam em cache; a lista de IDs expira após 24 horas.
-
-[`catalogo_pokemon.py`](./src/cartas/integration/catalogo_pokemon.py):
-
-```python
-pokemon = self._pokemons.get(pokemon_id)
-if pokemon is None:
-    pokemon = self._catalogo.buscar_pokemon_por_id(pokemon_id)
-    self._pokemons[pokemon_id] = pokemon
-return pokemon
 ```
 
 ### Strategy
