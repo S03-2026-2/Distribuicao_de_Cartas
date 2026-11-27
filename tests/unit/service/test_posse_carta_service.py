@@ -24,10 +24,13 @@ class PosseCartaServiceTest(TestCase):
 
     def test_consultas(self) -> None:
         self.assertEqual(self.service.consultar_cartas_do_jogador(self.origem.jogador_id), [self.carta])
-        self.assertTrue(self.service.consultar_posse_carta(self.origem.jogador_id, self.carta.carta_id))
-        self.assertFalse(self.service.consultar_posse_carta(self.destino.jogador_id, self.carta.carta_id))
+        self.assertTrue(self.service.consultar_posse_pokemon(self.origem.jogador_id, 1))
+        self.assertFalse(self.service.consultar_posse_pokemon(self.origem.jogador_id, 4))
+        self.assertFalse(self.service.consultar_posse_pokemon(self.destino.jogador_id, 1))
         with self.assertRaises(LookupError):
             self.service.consultar_cartas_do_jogador(uuid4())
+        with self.assertRaises(LookupError):
+            self.service.consultar_posse_pokemon(uuid4(), 1)
 
     def test_transferencia_persiste_as_duas_alteracoes(self) -> None:
         self.service.atualizar_posse(self.carta.carta_id, self.destino.jogador_id)

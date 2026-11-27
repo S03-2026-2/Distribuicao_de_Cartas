@@ -13,8 +13,8 @@ class SchemaName(StrEnum):
     CARTA_RESPONSE = "carta_response.schema.json"
     CONSULTAR_CARTAS_DO_JOGADOR_REQUEST = "consultar_cartas_do_jogador_request.schema.json"
     CONSULTAR_CARTAS_DO_JOGADOR_RESPONSE = "consultar_cartas_do_jogador_response.schema.json"
-    CONSULTAR_POSSE_CARTA_REQUEST = "consultar_posse_carta_request.schema.json"
-    CONSULTAR_POSSE_CARTA_RESPONSE = "consultar_posse_carta_response.schema.json"
+    CONSULTAR_POSSE_POKEMON_REQUEST = "consultar_posse_pokemon_request.schema.json"
+    CONSULTAR_POSSE_POKEMON_RESPONSE = "consultar_posse_pokemon_response.schema.json"
 
 
 @lru_cache(maxsize=1)

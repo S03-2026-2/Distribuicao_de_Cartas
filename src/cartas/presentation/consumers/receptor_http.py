@@ -17,8 +17,8 @@ from cartas.presentation.dtos.posse_carta import (
     AtualizarPosseRequestDTO,
     CartaResponseDTO,
     ConsultarCartasDoJogadorRequestDTO,
-    ConsultarPosseCartaRequestDTO,
-    ConsultarPosseCartaResponseDTO,
+    ConsultarPossePokemonRequestDTO,
+    ConsultarPossePokemonResponseDTO,
 )
 from cartas.presentation.schema_validator import SchemaName, validate_payload
 from cartas.presentation.swagger import swagger
@@ -70,36 +70,43 @@ def criar_app(
             ),
         )
 
-    @app.get("/jogadores/<jogador_id>/cartas/<carta_id>/posse")
-    def consultar_posse_carta(
-        jogador_id: str, carta_id: str
+    @app.get("/jogadores/<jogador_id>/pokemons/<pokemon_id>/posse")
+    def consultar_posse_pokemon(
+        jogador_id: str, pokemon_id: str
     ) -> tuple[Response, int]:
-        payload = {"jogador_id": jogador_id, "carta_id": carta_id}
-        erro = _validar_entrada(SchemaName.CONSULTAR_POSSE_CARTA_REQUEST, payload)
+        if not (pokemon_id.isascii() and pokemon_id.isdecimal()):
+            return _erro("O campo pokemon_id deve ser um inteiro positivo."), 400
+        try:
+            identificador = int(pokemon_id)
+        except ValueError:
+            return _erro("O campo pokemon_id deve ser um inteiro positivo."), 400
+
+        payload = {"jogador_id": jogador_id, "pokemon_id": identificador}
+        erro = _validar_entrada(SchemaName.CONSULTAR_POSSE_POKEMON_REQUEST, payload)
         if erro is not None:
             return erro
 
         try:
-            request_dto = ConsultarPosseCartaRequestDTO(
+            request_dto = ConsultarPossePokemonRequestDTO(
                 jogador_id=_ler_uuid(payload, "jogador_id"),
-                carta_id=_ler_uuid(payload, "carta_id"),
+                pokemon_id=identificador,
             )
         except ValueError as erro:
             return _erro(str(erro)), 400
 
         def responder() -> tuple[Response, int]:
-            resposta = ConsultarPosseCartaResponseDTO(
-                possui=cartas_controller.consultar_posse_carta(
-                    request_dto.jogador_id, request_dto.carta_id
+            resposta = ConsultarPossePokemonResponseDTO(
+                possui=cartas_controller.consultar_posse_pokemon(
+                    request_dto.jogador_id, request_dto.pokemon_id
                 )
             )
             payload_resposta = {"possui": resposta.possui}
             validate_payload(
-                SchemaName.CONSULTAR_POSSE_CARTA_RESPONSE, payload_resposta
+                SchemaName.CONSULTAR_POSSE_POKEMON_RESPONSE, payload_resposta
             )
             return jsonify(payload_resposta), 200
 
-        return _executar_cartas(app, "consultar posse da carta", responder)
+        return _executar_cartas(app, "consultar posse do Pokémon", responder)
 
     @app.put("/cartas/<carta_id>/posse")
     def atualizar_posse(carta_id: str) -> tuple[Response, int]:

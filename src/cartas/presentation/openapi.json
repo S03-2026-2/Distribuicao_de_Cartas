@@ -82,22 +82,33 @@
         }
       }
     },
-    "/jogadores/{jogador_id}/cartas/{carta_id}/posse": {
+    "/jogadores/{jogador_id}/pokemons/{pokemon_id}/posse": {
       "get": {
         "tags": ["Cartas"],
-        "summary": "Verificar se o jogador possui uma carta",
-        "description": "Retorna `possui: false` se o jogador existe, mas não tem uma carta com o ID informado.",
-        "operationId": "consultarPosseCarta",
+        "summary": "Verificar se o jogador possui um Pokémon",
+        "description": "Verifica se o jogador possui uma carta do Pokémon informado. Por exemplo, use `pokemon_id: 1` para Bulbasaur. Retorna `possui: false` se o jogador existe, mas não tem uma carta desse Pokémon. A consulta não acessa o catálogo externo.",
+        "operationId": "consultarPossePokemon",
         "parameters": [
           {"$ref": "#/components/parameters/JogadorId"},
-          {"$ref": "#/components/parameters/CartaId"}
+          {"$ref": "#/components/parameters/PokemonId"}
         ],
         "responses": {
           "200": {
             "description": "Resultado da consulta de posse.",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Posse"}}}
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Posse"},
+                "examples": {
+                  "possui": {"value": {"possui": true}},
+                  "naoPossui": {"value": {"possui": false}}
+                }
+              }
+            }
           },
-          "400": {"$ref": "#/components/responses/EntradaInvalida"},
+          "400": {
+            "description": "O jogador_id deve ser um UUID e o pokemon_id deve ser um inteiro positivo.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Erro"}}}
+          },
           "404": {"$ref": "#/components/responses/JogadorNaoEncontrado"},
           "500": {"$ref": "#/components/responses/FalhaInterna"}
         }
@@ -143,6 +154,14 @@
         "required": true,
         "schema": {"type": "string", "format": "uuid"},
         "example": "11111111-1111-4111-8111-111111111111"
+      },
+      "PokemonId": {
+        "name": "pokemon_id",
+        "in": "path",
+        "required": true,
+        "description": "ID numérico do Pokémon, não o UUID da carta.",
+        "schema": {"type": "integer", "minimum": 1},
+        "example": 1
       },
       "CartaId": {
         "name": "carta_id",

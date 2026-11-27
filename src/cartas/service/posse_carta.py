@@ -2,13 +2,14 @@ from uuid import UUID
 from typing import Protocol
 
 from cartas.model.carta import Carta
+from cartas.model.jogador import Jogador
 from cartas.service.posse_carta_ports import JogadorCartasRepository
 
 
 class PosseCartaService(Protocol):
     def consultar_cartas_do_jogador(self, jogador_id: UUID) -> list[Carta]: ...
 
-    def consultar_posse_carta(self, jogador_id: UUID, carta_id: UUID) -> bool: ...
+    def consultar_posse_pokemon(self, jogador_id: UUID, pokemon_id: int) -> bool: ...
 
     def atualizar_posse(self, carta_id: UUID, novo_jogador_id: UUID) -> None: ...
 
@@ -17,14 +18,17 @@ class PosseCartaServiceImpl(PosseCartaService):
     def __init__(self, repositorio: JogadorCartasRepository) -> None:
         self._repositorio = repositorio
 
-    def consultar_cartas_do_jogador(self, jogador_id: UUID) -> list[Carta]:
+    def _buscar_jogador(self, jogador_id: UUID) -> Jogador:
         jogador = self._repositorio.buscar_por_id(jogador_id)
         if jogador is None:
             raise LookupError(f"Jogador {jogador_id} não encontrado.")
-        return list(jogador.listar_cartas())
+        return jogador
 
-    def consultar_posse_carta(self, jogador_id: UUID, carta_id: UUID) -> bool:
-        return any(carta.carta_id == carta_id for carta in self.consultar_cartas_do_jogador(jogador_id))
+    def consultar_cartas_do_jogador(self, jogador_id: UUID) -> list[Carta]:
+        return list(self._buscar_jogador(jogador_id).listar_cartas())
+
+    def consultar_posse_pokemon(self, jogador_id: UUID, pokemon_id: int) -> bool:
+        return self._buscar_jogador(jogador_id).possui_pokemon(pokemon_id)
 
     def atualizar_posse(self, carta_id: UUID, novo_jogador_id: UUID) -> None:
         origem = self._repositorio.buscar_por_carta_id(carta_id)
